@@ -5,6 +5,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>محول عروض الصيدلية - Offers Automation</title>
+    <link rel="icon" type="image/jpeg" href="icon.png">
+    <link rel="apple-touch-icon" href="icon.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="theme-color" content="#3b82f6">
+    <link rel="manifest" href="manifest.json">
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
     <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -848,6 +854,7 @@
 
                 let currentBundleType = "";
                 let currentSavings = "";
+                let currentOffer = "";
 
                 for (let i = headerRowIdx + 1; i < data.length; i++) {
                     const row = data[i];
@@ -860,8 +867,8 @@
 
                         // الفلتر الصارم 6 أرقام
                         if (/^\d{6}$/.test(strVal)) {
-                            if (!usedItems.has(strVal)) {
-                                usedItems.add(strVal);
+                            if (true) { // السماح بتكرار الصنف في الشيتات
+                                // usedItems.add(strVal);
 
                                 let priceVal = "";
                                 if (colPriceAfter > -1 && row[colPriceAfter] !== undefined) {
@@ -881,9 +888,12 @@
                                 if (colExtraTag > -1 && row[colExtraTag] !== undefined) {
                                     currentSavings = String(row[colExtraTag]).trim();
                                 }
+                                if (colOffer > -1 && row[colOffer]) {
+                                    currentOffer = row[colOffer];
+                                }
 
-                                if (isArbahiSheet && colOffer > -1 && row[colOffer]) {
-                                    finalPromo = row[colOffer];
+                                if (isArbahiSheet && currentOffer) {
+                                    finalPromo = currentOffer;
                                 }
                                 else if (isMilkFormat && currentBundleType) {
                                     finalPromo = currentBundleType;
@@ -900,7 +910,9 @@
                                 }
                                 else if (snLower.includes("fixed price")) {
                                     finalPromo = `Buy 1 @ SAR ${priceVal}`;
-                                } else if (/^\d+$/.test(sheetName)) {
+                                } 
+//}
+else if (/^\d+$/.test(sheetName)) {
                                     finalPromo = `Buy 1 Get 2nd @ SAR ${srPrice}`;
                                 } else if (snLower.includes("price cut")) {
                                     finalPromo = (colDisc > -1 && row[colDisc] !== undefined) ? row[colDisc] : (row[j + 1] !== undefined ? row[j + 1]  : "");
