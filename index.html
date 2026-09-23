@@ -955,18 +955,21 @@ else if (/^\d+$/.test(sheetName)) {
                 let price = row.price;
                 let sheetName = row.sheetName;
                 if (price === 'nan') price = "";
+                
+                let groupKey = desc + "___" + sheetName;
 
-                if (!offers_grouped[desc]) {
-                    offers_grouped[desc] = { codes: [], prices: {}, sheetName: sheetName, savings: row.savings || "", forceArbahi: row.forceArbahi || false };
+                if (!offers_grouped[groupKey]) {
+                    offers_grouped[groupKey] = { originalDesc: desc, codes: [], prices: {}, sheetName: sheetName, savings: row.savings || "", forceArbahi: row.forceArbahi || false };
                 }
-                if (!offers_grouped[desc].codes.includes(barcode)) {
-                    offers_grouped[desc].codes.push(barcode);
+                if (!offers_grouped[groupKey].codes.includes(barcode)) {
+                    offers_grouped[groupKey].codes.push(barcode);
                 }
-                offers_grouped[desc].prices[barcode] = price;
+                offers_grouped[groupKey].prices[barcode] = price;
             });
 
             const offersDB = [];
-            for (let [desc, data] of Object.entries(offers_grouped)) {
+            for (let [groupKey, data] of Object.entries(offers_grouped)) {
+                let desc = data.originalDesc;
                 let isArbahiVal = data.forceArbahi || false;
                 if (data.savings && !data.forceArbahi) {
                     isArbahiVal = String(desc).includes('+') ? true : false;
