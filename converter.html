@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>محول عروض الصيدلية - Offers Automation</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Cairo', sans-serif; background-color: #f8fafc; }
+        .drag-active { border-color: #3b82f6 !important; background-color: #eff6ff !important; }
+        .glass-panel { background: white; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06); }
+    </style>
+</head>
+<body class="min-h-screen text-slate-800 p-4 md:p-8">
+
+    <div class="max-w-7xl mx-auto space-y-6">
+        
+        <!-- Header -->
+        <div class="glass-panel p-6 flex flex-col md:flex-row items-center justify-between">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900">أداة أتمتة العروض (Excel to JSON) ⚡</h1>
+                <p class="text-slate-500 mt-1">قم برفع ملف الإكسيل الخام الخاص بالصيدلية وسيتم تحويله تلقائياً لملف عروض جاهز.</p>
+                <p id="fileNameDisplay" class="text-blue-600 font-bold mt-2 hidden"></p>
+            </div>
+            <button id="downloadBtn" style="display: none;" class="mt-4 md:mt-0 bg-green-600 hover:bg-green-700 text-white font-bold py-2 px-6 rounded-xl shadow-lg transition-all flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                </svg>
+                تحميل JSON
+            </button>
+        </div>
+
+        <!-- Uploader -->
+        <div id="dropZone" class="glass-panel p-10 border-2 border-dashed border-slate-300 text-center cursor-pointer hover:border-blue-500 hover:bg-slate-50 transition-all flex flex-col items-center justify-center min-h-[250px]">
+            <svg xmlns="http://www.w3.org/2000/svg" class="h-16 w-16 text-slate-400 mb-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            <h3 class="text-lg font-bold text-slate-700">اسحب وأفلت ملف الإكسيل هنا</h3>
+            <p class="text-sm text-slate-500 mt-2">أو اضغط لاختيار الملف من جهازك (.xlsx, .xls)</p>
+            <input type="file" id="fileInput" class="hidden" accept=".xlsx, .xls, .csv">
+        </div>
+
+        <!-- Loading -->
+        <div id="loading" style="display: none;" class="glass-panel p-8 text-center">
+            <div class="inline-block animate-spin rounded-full h-12 w-12 border-4 border-blue-500 border-t-transparent mb-4"></div>
+            <p class="text-lg font-bold text-slate-700">جاري معالجة البيانات واستخراج العروض...</p>
+        </div>
+
+        <!-- Preview Table -->
+        <div id="previewContainer" style="display: none;" class="glass-panel p-6 overflow-hidden">
+            <div class="flex items-center justify-between mb-4">
+                <h2 class="text-xl font-bold">مراجعة العروض المستخرجة (يمكنك تعديل القيم مباشرة)</h2>
+                <span id="statsBadge" class="bg-blue-100 text-blue-800 text-sm font-bold px-3 py-1 rounded-full"></span>
+            </div>
+            
+            <div class="overflow-x-auto rounded-lg border border-slate-200">
+                <table class="w-full text-sm text-right text-slate-500">
+                    <thead class="text-xs text-slate-700 uppercase bg-slate-50">
+                        <tr>
+                            <th class="px-4 py-3 border-b">إجراء</th>
+                            <th class="px-4 py-3 border-b">اسم الشيت</th>
+                            <th class="px-4 py-3 border-b">العرض (عربي)</th>
+                            <th class="px-4 py-3 border-b">العرض (إنجليزي)</th>
+                            <th class="px-4 py-3 border-b">الأكواد</th>
+                            <th class="px-4 py-3 border-b">ستايل CSS</th>
+                        </tr>
+                    </thead>
+                    <tbody id="previewBody" class="divide-y divide-slate-200 bg-white">
+                        <!-- Rows will be injected here -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Codes Modal -->
+    <div id="codesModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+        <div class="bg-white rounded-xl p-6 w-11/12 max-w-2xl flex flex-col shadow-2xl">
+            <h3 class="text-xl font-bold mb-4">تعديل الأكواد</h3>
+            <p class="text-sm text-gray-500 mb-2">أدخل الأكواد مفصولة بمسافة أو سطر جديد.</p>
+            <textarea id="codesTextarea" class="w-full border border-gray-300 rounded p-3 focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm leading-relaxed" style="height: 300px; direction: ltr;"></textarea>
+            <div class="flex justify-end gap-3 mt-6">
+                <button onclick="closeCodesModal()" class="px-4 py-2 bg-gray-200 hover:bg-gray-300 rounded text-gray-700 font-bold transition-colors">إلغاء</button>
+                <button onclick="saveCodesModal()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded text-white font-bold transition-colors">حفظ التعديلات</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const loading = document.getElementById('loading');
+        const previewContainer = document.getElementById('previewContainer');
+        const previewBody = document.getElementById('previewBody');
+        const downloadBtn = document.getElementById('downloadBtn');
+        const statsBadge = document.getElementById('statsBadge');
+        const fileNameDisplay = document.getElementById('fileNameDisplay');
+        const codesModal = document.getElementById('codesModal');
+        const codesTextarea = document.getElementById('codesTextarea');
+
+        let finalJsonData = [];
+        let currentEditingCell = null;
+
+        function openCodesModal(cell) {
+            currentEditingCell = cell;
+            codesTextarea.value = cell.getAttribute('data-codes');
+            codesModal.classList.remove('hidden');
+            codesModal.classList.add('flex');
+            codesTextarea.focus();
+        }
+
+        function closeCodesModal() {
+            codesModal.classList.add('hidden');
+            codesModal.classList.remove('flex');
+            currentEditingCell = null;
+        }
+
+        function saveCodesModal() {
+            if (!currentEditingCell) return;
+            
+            // تنظيف الأكواد
+            const newCodesRaw = codesTextarea.value;
+            const newCodes = newCodesRaw.split(/\s+/).filter(c => c);
+            
+            // تحديث data-codes
+            currentEditingCell.setAttribute('data-codes', newCodes.join(' '));
+            
+            // إعادة رسم محتوى الخلية
+            let badgesHtml = newCodes.slice(0, 3).map(c => `<span class="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs">${c}</span>`).join('');
+            let editBtn = newCodes.length > 3 
+                ? `<button onclick="openCodesModal(this.closest('td'))" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs cursor-pointer transition-colors">+${newCodes.length - 3} (تعديل)</button>` 
+                : `<button onclick="openCodesModal(this.closest('td'))" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs cursor-pointer transition-colors">تعديل</button>`;
+            
+            currentEditingCell.innerHTML = `<div class="flex flex-wrap gap-1 items-center">${badgesHtml}${editBtn}</div>`;
+            
+            updateStats();
+            closeCodesModal();
+        }
+
+        // إغلاق المودال عند النقر بالخارج
+        codesModal.addEventListener('click', (e) => {
+            if (e.target === codesModal) closeCodesModal();
+        });
+
+        // --- Event Listeners ---
+        dropZone.addEventListener('click', () => fileInput.click());
+        dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag-active'); });
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-active'));
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-active');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', (e) => {
+            if (e.target.files.length) handleFile(e.target.files[0]);
+        });
+
+        downloadBtn.addEventListener('click', () => {
+            // تحديث البيانات من الجدول قبل التحميل
+            updateFinalDataFromTable();
+            if (!finalJsonData || finalJsonData.length === 0) return;
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(finalJsonData, null, 2));
+            const dlAnchorElem = document.createElement('a');
+            dlAnchorElem.setAttribute("href", dataStr);
+            dlAnchorElem.setAttribute("download", "offersfromtegara.json");
+            dlAnchorElem.click();
+        });
+
+        function updateFinalDataFromTable() {
+            finalJsonData = [];
+            const rows = previewBody.querySelectorAll('tr');
+            rows.forEach(row => {
+                const sheetName = row.querySelector('.col-sheet').innerText.trim();
+                const offerTypeAR = row.querySelector('.col-ar').innerText.trim();
+                const offerType = row.querySelector('.col-en').innerText.trim();
+                const codesText = row.querySelector('.col-codes-container').getAttribute('data-codes') || '';
+                const styleClass = row.querySelector('.col-style').innerText.trim();
+                
+                const codes = codesText.split(/\s+/).filter(c => c);
+                
+                finalJsonData.push({
+                    sheetName: sheetName,
+                    offerType: offerType,
+                    offerTypeAR: offerTypeAR,
+                    codes: codes,
+                    styleClass: styleClass,
+                    badgeClass: styleClass,
+                    offerPrice: {} 
+                });
+            });
+        }
+
+        // --- Processing Logic ---
+        function handleFile(file) {
+            dropZone.style.display = 'none';
+            loading.style.display = 'block';
+            previewContainer.style.display = 'none';
+            downloadBtn.style.display = 'none';
+            
+            fileNameDisplay.innerText = "الملف الحالي: " + file.name;
+            fileNameDisplay.classList.remove('hidden');
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = new Uint8Array(e.target.result);
+                    processExcel(data);
+                } catch (err) {
+                    alert('حدث خطأ أثناء معالجة الملف: ' + err.message);
+                    resetUI();
+                }
+            };
+            reader.readAsArrayBuffer(file);
+        }
+
+        function resetUI() {
+            loading.style.display = 'none';
+            dropZone.style.display = 'flex';
+        }
+
+        function processExcel(arrayBuffer) {
+            const workbook = XLSX.read(arrayBuffer, { type: 'array' });
+            let mergedData = [];
+            const usedItems = new Set();
+            let xyOffers = []; // للحفاظ على عروض الـ XY منفصلة
+
+            workbook.SheetNames.forEach(sheetName => {
+                if (sheetName === "Merged_Data") return;
+                const ws = workbook.Sheets[sheetName];
+                const data = XLSX.utils.sheet_to_json(ws, { header: 1 });
+                
+                if (data.length === 0) return;
+                
+                let snLower = String(sheetName).toLowerCase().trim();
+                let promoText = String(data[0][0] || "");
+                
+                // معالجة شيت الـ XY فقط إذا كان اسم الشيت xy
+                if (snLower === 'xy') {
+                    for (let i = 0; i < data.length; i++) {
+                        const row = data[i];
+                        if (!row) continue;
+                        
+                        // استخراج كل الأكواد المكونة من 6 أرقام في هذا الصف
+                        let rowCodes = [];
+                        for (let j = 0; j < row.length; j++) {
+                            let strVal = String(row[j]).trim();
+                            if (/^\d{6}$/.test(strVal)) {
+                                rowCodes.push(strVal);
+                            }
+                        }
+                        
+                        // إذا وجدنا كودين أو أكثر في نفس الصف، الأول هو X والثاني هو Y
+                        if (rowCodes.length >= 2) {
+                            let xCode = rowCodes[0];
+                            let yCode = rowCodes[1];
+                            
+                            if (!usedItems.has(xCode)) {
+                                usedItems.add(xCode);
+                                xyOffers.push({
+                                    sheetName: sheetName,
+                                    offerType: `BUY 1 GET ${yCode} FREE`,
+                                    offerTypeAR: `اشتري حبة واحصل على ${yCode} مجانا`,
+                                    codes: [xCode],
+                                    styleClass: "offer-buy-get",
+                                    badgeClass: "offer-buy-get",
+                                    offerPrice: {}
+                                });
+                            }
+                        }
+                    }
+                    return; // إنهاء معالجة هذا الشيت لأننا استخرجنا الـ XY
+                }
+
+                // استخراج السعر من الخلية A1 للشيتات العادية
+                let srPrice = "";
+                let srMatch = promoText.match(/SR\s*(\d+\.?\d*)/i);
+                if (srMatch) srPrice = srMatch[1];
+                
+                // تحديد صف العناوين
+                let headerRowIdx = -1;
+                let colItem = -1, colDisc = -1, colPriceAfter = -1;
+                
+                for (let i = 0; i < Math.min(20, data.length); i++) {
+                    const row = data[i];
+                    if (!row) continue;
+                    let itemIdx = row.findIndex(c => String(c).trim().toLowerCase() === "item number");
+                    if (itemIdx !== -1) {
+                        headerRowIdx = i;
+                        colItem = itemIdx;
+                        colDisc = row.findIndex(c => String(c).trim().toLowerCase() === "discount");
+                        colPriceAfter = row.findIndex(c => {
+                            let s = String(c).trim().toLowerCase();
+                            return s === "price after discount" || s === "price after discount inc vat";
+                        });
+                        break;
+                    }
+                }
+                
+                if (headerRowIdx === -1) return; // تخطي الشيت إذا لم نجد العناوين
+                
+                for (let i = headerRowIdx + 1; i < data.length; i++) {
+                    const row = data[i];
+                    if (!row) continue;
+                    
+                    for (let j = 0; j < row.length; j++) {
+                        let cellVal = row[j];
+                        if (cellVal == null) continue;
+                        let strVal = String(cellVal).trim();
+                        
+                        // الفلتر الصارم 6 أرقام
+                        if (/^\d{6}$/.test(strVal)) {
+                            if (!usedItems.has(strVal)) {
+                                usedItems.add(strVal);
+                                
+                                let priceVal = "";
+                                if (colPriceAfter > -1 && row[colPriceAfter] !== undefined) {
+                                    priceVal = row[colPriceAfter];
+                                } else if (row[j + 2] !== undefined) {
+                                    priceVal = row[j + 2];
+                                }
+                                
+                                let finalPromo = "";
+                                if (snLower.includes("fixed price")) {
+                                    finalPromo = `Buy 1 @ SAR ${priceVal}`;
+                                } else if (/^\d+$/.test(sheetName)) {
+                                    finalPromo = `Buy 1 Get 2nd @ SAR ${srPrice}`;
+                                } else if (snLower.includes("price cut")) {
+                                    finalPromo = (colDisc > -1 && row[colDisc] !== undefined) ? row[colDisc] : (row[j + 1] !== undefined ? row[j + 1] : "");
+                                } else {
+                                    finalPromo = sheetName;
+                                }
+                                
+                                // معالجة النسب المئوية الكسرية
+                                if (typeof finalPromo === 'number' && finalPromo > 0 && finalPromo < 1) {
+                                    finalPromo = Math.round(finalPromo * 100) + "%";
+                                } else {
+                                    finalPromo = String(finalPromo).trim();
+                                    if (!isNaN(parseFloat(finalPromo)) && parseFloat(finalPromo) > 0 && parseFloat(finalPromo) < 1 && !finalPromo.includes('%')) {
+                                        finalPromo = Math.round(parseFloat(finalPromo) * 100) + "%";
+                                    }
+                                }
+                                
+                                mergedData.push({
+                                    barcode: strVal,
+                                    price: String(priceVal).trim(),
+                                    desc: finalPromo,
+                                    sheetName: sheetName
+                                });
+                                break; 
+                            }
+                        }
+                    }
+                }
+            });
+
+            // مرحلة التجميع وتوليد الـ JSON النهائي للعروض العادية
+            const offers_grouped = {};
+            mergedData.forEach(row => {
+                let desc = row.desc;
+                if (!desc || desc === 'nan') return;
+                
+                let barcode = row.barcode;
+                let price = row.price;
+                let sheetName = row.sheetName;
+                if (price === 'nan') price = "";
+                
+                if (!offers_grouped[desc]) {
+                    offers_grouped[desc] = { codes: [], prices: {}, sheetName: sheetName };
+                }
+                if (!offers_grouped[desc].codes.includes(barcode)) {
+                    offers_grouped[desc].codes.push(barcode);
+                }
+                offers_grouped[desc].prices[barcode] = price;
+            });
+
+            const offersDB = [];
+            for (let [desc, data] of Object.entries(offers_grouped)) {
+                offersDB.push({
+                    sheetName: data.sheetName,
+                    offerType: format_offer_en(desc),
+                    offerTypeAR: format_offer_ar(desc),
+                    codes: data.codes,
+                    styleClass: get_style_class(desc),
+                    badgeClass: get_style_class(desc),
+                    offerPrice: data.prices
+                });
+            }
+            
+            // إضافة عروض الـ XY 
+            finalJsonData = [...offersDB, ...xyOffers];
+            renderPreview(finalJsonData);
+        }
+
+        // --- Formatting Functions (Python Logic Translation) ---
+        function format_offer_ar(text) {
+            text = text.replace(/-?\s*custom\s*/ig, ' '); // إزالة كلمة custom
+            const text_lower = text.toLowerCase();
+            const nums = text.match(/\d+\.?\d*/g) || [];
+            
+            if (text_lower.includes('sar')) {
+                if (text_lower.includes('2nd') || text_lower.includes('second')) {
+                    const price = nums.length > 0 ? nums[nums.length - 1] : "";
+                    return `اشتري حبة واحصل على الثانية بسعر ${price} ريال`;
+                } else {
+                    const price = nums.length > 0 ? nums[nums.length - 1] : "";
+                    return `اشتري حبة بسعر ${price} ريال`;
+                }
+            }
+
+            if (text.includes('+') || text_lower.includes('free') || text.includes('مجانا')) {
+                if (nums.length >= 2) {
+                    const h_buy = nums[0] === '1' ? "حبه" : `${nums[0]} حبات`;
+                    const h_get = nums[1] === '1' ? "حبه" : `${nums[1]} حبات`;
+                    if (nums[0] === '1' && nums[1] === '1') {
+                        return "اشتري حبه واحصل على الثانية مجانا";
+                    }
+                    return `عرض ${h_buy} + ${h_get} مجانا`;
+                }
+                return "اشتري حبه واحصل على حبه مجانا";
+            }
+
+            if (text.includes('%')) {
+                const p = nums.length > 0 ? nums[0] : "";
+                if (["second", "2nd", "ثانية", "الحبه"].some(x => text_lower.includes(x))) {
+                    return `خصم ${p}% على الحبة الثانية`;
+                }
+                return `خصم مباشر ${p}%`;
+            }
+            
+            return text.trim();
+        }
+
+        function format_offer_en(text) {
+            text = text.replace(/-?\s*custom\s*/ig, ' '); // إزالة كلمة custom
+            const text_lower = text.toLowerCase();
+            const nums = text.match(/\d+\.?\d*/g) || [];
+            
+            if (text_lower.includes('sar')) {
+                if (text_lower.includes('2nd') || text_lower.includes('second')) {
+                    return `Buy 1 Get 2nd @ ${nums[nums.length - 1] || ''} SAR`;
+                }
+                return `Buy 1 @ ${nums[nums.length - 1] || ''} SAR`;
+            }
+
+            if (text.includes('+') || text_lower.includes('free')) {
+                if (nums.length >= 2) return `${nums[0]}+${nums[1]} free`;
+                return "1+1 free";
+            }
+
+            if (text.includes('%')) {
+                const p = nums.length > 0 ? nums[0] : "";
+                if (["second", "2nd", "ثانية"].some(x => text_lower.includes(x))) {
+                    return `${p}% off on 2nd`;
+                }
+                return `${p}% off`;
+            }
+            
+            return text.trim();
+        }
+
+        function get_style_class(text) {
+            const text_lower = text.toLowerCase();
+            if (text.includes('%')) {
+                const nums = text.match(/\d+/g) || [];
+                const p = nums.length > 0 ? nums[0] : "0";
+                if (["second", "2nd", "ثانية"].some(x => text_lower.includes(x))) {
+                    return `offer-${p}-second`;
+                }
+                return `offer-${p}-direct`;
+            }
+            if (["free", "مجانا", "+", "sar"].some(x => text_lower.includes(x))) {
+                return "offer-buy-get";
+            }
+            return "offer-custom";
+        }
+
+        function renderPreview(offers) {
+            loading.style.display = 'none';
+            previewContainer.style.display = 'block';
+            downloadBtn.style.display = 'flex';
+            
+            let totalCodes = offers.reduce((acc, offer) => acc + offer.codes.length, 0);
+            statsBadge.innerText = `إجمالي العروض: ${offers.length} | الأكواد: ${totalCodes}`;
+
+            previewBody.innerHTML = '';
+            offers.forEach((offer, index) => {
+                const tr = document.createElement('tr');
+                tr.className = "hover:bg-slate-50 transition-colors";
+                
+                let badgesHtml = offer.codes.slice(0, 3).map(c => `<span class="bg-gray-100 text-gray-700 px-2 py-1 rounded text-xs">${c}</span>`).join('');
+                let editBtn = offer.codes.length > 3 
+                    ? `<button onclick="openCodesModal(this.closest('td'))" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs cursor-pointer transition-colors">+${offer.codes.length - 3} (تعديل)</button>` 
+                    : `<button onclick="openCodesModal(this.closest('td'))" class="bg-blue-100 hover:bg-blue-200 text-blue-700 px-2 py-1 rounded text-xs cursor-pointer transition-colors">تعديل</button>`;
+
+                tr.innerHTML = `
+                    <td class="px-4 py-4">
+                        <button onclick="this.closest('tr').remove(); updateStats();" class="text-red-500 hover:text-red-700 bg-red-50 p-2 rounded">حذف</button>
+                    </td>
+                    <td class="px-4 py-4 text-xs font-bold text-gray-500 col-sheet">${offer.sheetName || ''}</td>
+                    <td class="px-4 py-4 font-bold text-slate-800 col-ar" contenteditable="true" style="outline: none; border-bottom: 1px dashed #cbd5e1;">${offer.offerTypeAR}</td>
+                    <td class="px-4 py-4 font-medium col-en" dir="ltr" contenteditable="true" style="outline: none; border-bottom: 1px dashed #cbd5e1;">${offer.offerType}</td>
+                    <td class="px-4 py-4 col-codes-container" data-codes="${offer.codes.join(' ')}">
+                        <div class="flex flex-wrap gap-1 items-center">
+                            ${badgesHtml}
+                            ${editBtn}
+                        </div>
+                    </td>
+                    <td class="px-4 py-4 col-style" contenteditable="true" style="outline: none; border-bottom: 1px dashed #cbd5e1;">${offer.styleClass}</td>
+                `;
+                previewBody.appendChild(tr);
+            });
+            
+            // إضافة مستمعين لحدث التعديل لتحديث العدادات
+            const editableCells = previewBody.querySelectorAll('[contenteditable="true"]');
+            editableCells.forEach(cell => {
+                cell.addEventListener('input', updateStats);
+            });
+        }
+        
+        function updateStats() {
+            const rows = previewBody.querySelectorAll('tr');
+            let totalCodes = 0;
+            rows.forEach(row => {
+                const codesContainer = row.querySelector('.col-codes-container');
+                if(codesContainer) {
+                    const codesText = codesContainer.getAttribute('data-codes') || '';
+                    const count = codesText.split(/\s+/).filter(c => c).length;
+                    totalCodes += count;
+                }
+            });
+            statsBadge.innerText = `إجمالي العروض: ${rows.length} | الأكواد: ${totalCodes}`;
+        }
+    </script>
+</body>
+</html>
